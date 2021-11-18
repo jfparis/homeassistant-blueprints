@@ -1,0 +1,162 @@
+blueprint:
+  name: Sunset - Sunrise - Presence lights
+  description: >
+    Turn on a light at sunset / and in the morning and turn it off in the evening / sunrise.
+    Light trigger can also be optionally conditionaled to 
+     * presence detection
+     * low carbon intensity electricity
+  domain: automation
+  input:
+    light_target:
+      name: Light
+      description: (Group of) light to turn on/off
+      selector:
+        target:
+          entity:
+            domain: light
+    presence_sensor:
+      name: Presence Flag
+      description: Binary sensor that tells whether anyone is one
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: occupancy
+    presence_turn_off:
+      name: Turn off on presence?
+      description: Should we turn the light off when everyone left
+      default: true
+      selector:
+        boolean:
+    dirty_energy_sensor:
+      name: Dirty Energy Flag
+      description: Binary sensor that tells whether the energy is dirty. If you do not want to use this functionality, any binary flag can be inputed here for so long as the following boolean is kept to false
+      selector:
+        entity:
+          domain: binary_sensor
+    dirty_energy_turn_off:
+      name: Turn off on dirty energy signal?
+      description: Should we turn the light off when the energy used is dirty
+      default: false
+      selector:
+        boolean:
+    morning_time:
+      name: Morning time trigger
+      description: At what time should we turn on in the morning
+      default: "07:00:00"
+      selector:
+        time: 
+    night_time:
+      name: Night time trigger
+      description: At what time should we turn of in the evening
+      default: "23:00:00"
+      selector:
+        time: 
+    sunset_offset:
+      name: Offset vs sunset
+      description: A negative value for the lights to turn on before sunset
+      default: "-00:30:00"
+      selector:
+        time:  
+    sunrise_offset:
+      name: Offset vs sunrise
+      description: A positive value for the lights to turn off after sunrise
+      default: "00:30:00"
+      selector:
+        time: 
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  presence_turn_off: !input presence_turn_off
+  dirty_energy_turn_off: !input dirty_energy_turn_off
+
+trigger:
+  - platform: time
+    at: !input night_time
+    id: 'nightnight'
+  - platform: time
+    at: !input morning_time
+    id: morning
+  - platform: sun
+    event: sunset
+    offset: !input sunset_offset
+    id: sunset
+  - platform: sun
+    event: sunrise
+    offset: !input sunrise_offset
+    id: sunrise
+  - platform: state
+    entity_id: !input presence_sensor
+    id: presence_on
+    to: 'on'
+  - platform: state
+    entity_id: !input presence_sensor
+    to: 'off'
+    id: presence_off
+  - platform: state
+    entity_id: !input dirty_energy_sensor
+    to: 'on'
+    id: dirty_on
+  - platform: state
+    entity_id: !input dirty_energy_sensor
+    to: 'off'
+    id: dirty_off
+
+action:
+  - choose:
+    - conditions:
+      - condition: or
+        conditions:
+        - condition: trigger
+          id: 'nightnight'
+        - condition: trigger
+          id: sunrise
+        - condition: and
+          conditions:  
+          - condition: trigger
+            id: presence_off
+          - condition: template
+            value_template: "{{ presence_turn_off }}"
+        - condition: and
+          conditions:
+          - condition: trigger
+            id: dirty_on
+          - condition: template
+            value_template: "{{ dirty_energy_turn_off }}"
+      sequence:
+      - service: light.turn_off
+        target: !input light_target
+    - conditions:
+      - condition: and
+        conditions:
+        - condition: state
+          entity_id: !input presence_sensor
+          state: 'on'
+        - condition: or
+          conditions:
+          - condition: template
+            value_template: "{{ not(dirty_energy_turn_off) }}"
+          - condition: state
+            entity_id: !input dirty_energy_sensor
+            state: 'off'
+        - condition: or
+          conditions:
+          - condition: and
+            conditions:
+            - condition: time
+              after: !input morning_time
+            - condition: sun
+              before: sunrise
+              before_offset: !input sunrise_offset
+          - condition: and
+            conditions:
+            - condition: time
+              before: !input night_time
+            - condition: sun
+              after: sunset
+              after_offset: !input sunset_offset
+      sequence:
+      - service: light.turn_on
+        target: !input light_target
+    default: []
