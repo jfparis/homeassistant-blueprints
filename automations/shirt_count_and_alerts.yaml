@@ -1,0 +1,191 @@
+blueprint:
+  name: Shirt count
+  description: >-
+    An automation to count the number of ironed shirts in your wardrobe
+  domain: automation
+  input:
+    helper_shirt_count:
+      name: (Required) Helper - NB shirt
+      description: Input Number used to store the number of shirts left in the wardrobe
+      default: ""
+      selector:
+        entity:
+          domain: input_number
+    shirts_per_week:
+      name: Numbers of shirts used per week
+      description: Number of shirts used every week
+      default: 1
+      selector:
+        number:
+    alert_time:
+      name: Time at wich the alter should be sent
+      description: Time from which the alrt should be sent
+      default: "20:15:00"
+      selector:
+        time:
+    low_count_day:
+      name: Low count alert days
+      default: [tue, wed]
+      description: The days where you want to receive an alert if you don't have a shirt ready for tomorrow (nights before you work)
+      selector:
+        select:
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
+          custom_value: false
+          multiple: true
+    low_count_for_week_day:
+      name: Week ahead alert day
+      default: [sat, sun]
+      description: The days for which you want to receive an alert for the week ahead
+      selector:
+        select:
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
+          custom_value: false
+          multiple: true
+    office_zone:
+      name: This is the place where you wear the shirts
+      description: If you enter this zone, your shirt count decrease
+      selector:
+        entity:
+          domain: zone
+    shirt_person:
+      name: Person wearing the shirts
+      description: Person wearing the shirts
+      selector:
+        entity:
+          domain: person
+    enable_office_zone:
+      name: Use office zone for decreasing shirt count
+      description: If you turn this boolean on, we will use the office zone to decrease the shirt count
+      selector:
+        boolean:
+    office_template:
+      name: Template to detect office visit / shirt use
+      description: If this template turn true, your shirt count decrease
+      selector:
+        template:
+    enable_office_template:
+      name: Use office template for decreasing the number of ironed shirt inyour wardrbe
+      description: If you turn this boolean on, we will use the office template match to decrease the shirt count
+      selector:
+        boolean:
+    notify_device:
+      name: Device to notify
+      description: The device needs to run the official Home Assistant app to receive notifications.
+      default: false
+      selector:
+        device:
+          integration: mobile_app
+
+mode: single
+
+trace:
+  stored_traces: 50
+
+variables:
+  enable_office_zone: !input enable_office_zone
+  enable_office_template: !input enable_office_template
+  shirts_per_week: !input shirts_per_week
+  helper_shirt_count: !input helper_shirt_count
+
+trigger:
+  - platform: time
+    at: !input alert_time
+    id: alert_time
+  - platform: zone
+    entity_id: !input shirt_person
+    zone: !input office_zone
+    event: enter
+    id: person_in_work_zone
+  - platform: template
+    value_template: !input office_template
+    id: in_office_template
+condition: []
+action:
+  - choose:
+      - alias: "decrease shirt count if office"
+        conditions:
+          - condition: or
+            conditions:
+              - condition: and
+                conditions:
+                  - condition: template
+                    value_template: "{{enable_office_zone}}"
+                  - condition: trigger
+                    id: person_in_work_zone
+              - condition: and
+                conditions:
+                  - condition: template
+                    value_template: "{{enable_office_template}}"
+                  - condition: trigger
+                    id: in_office_template
+        sequence:
+          - service: input_number.decrement
+            data: {}
+            target:
+              entity_id: !input helper_shirt_count
+      - conditions:
+          - condition: trigger
+            id: alert_time
+          - condition: time
+            weekday: !input low_count_day
+          - condition: template
+            value_template: "{{states(helper_shirt_count) | int < 1}}"
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            message: No shirt left for tomorrow
+            title: Ironed shirts alert
+            data:
+              ttl: 0
+              priority: high
+              channel: shirtcount
+              importance: high
+              ledColor: blue
+      - conditions:
+          - condition: trigger
+            id: alert_time
+          - condition: time
+            weekday: !input low_count_for_week_day
+          - condition: template
+            value_template: "{{states(helper_shirt_count) | int <= shirts_per_week}}"
+        sequence:
+          - device_id: !input notify_device
+            domain: mobile_app
+            type: notify
+            message: No shirt left for next week
+            title: Ironed shirts alert
+            data:
+              ttl: 0
+              priority: high
+              channel: shirtcount
+              importance: high
+              ledColor: blue
