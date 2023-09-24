@@ -176,7 +176,7 @@ action:
           - condition: time
             weekday: !input low_count_for_week_day
           - condition: template
-            value_template: "{{states(helper_shirt_count) | int <= shirts_per_week}}"
+            value_template: "{{states(helper_shirt_count) | int < shirts_per_week}}"
         sequence:
           - device_id: !input notify_device
             domain: mobile_app
